@@ -1,0 +1,28 @@
+{
+    "global_prompt": "Shibuya Gyaru makeup style, heavy black eyeliner, dramatic false eyelashes, highly detailed, gyaru fashion",
+    "foundation": {
+        "color": "#D2A679", 
+        "alpha": 0.6,
+        "prompt": "tanned skin, warm undertone, matte finish"
+    },
+    "lips": {
+        "color": "#FADADD", 
+        "alpha": 0.8,
+        "prompt": "frosted pale pink lips, nude lips, glossy"
+    },
+    "blush": {
+        "color": "#E5A882", 
+        "alpha": 0.5,
+        "prompt": "soft terracotta blush under eyes"
+    },
+    "eyeshadow": {
+        "color": "#2B1B17", 
+        "alpha": 0.8,
+        "prompt": "heavy dark brown smoky eyeshadow, thick black eyeliner, gyaru eye makeup"
+    },
+    "brows": {
+        "color": "#8B5A2B", 
+        "alpha": 0.6,
+        "prompt": "light brown arched thin eyebrows"
+    }
+}
