@@ -1,4 +1,4 @@
-# DreamMakeup: Face Makeup Customization using Latent Diffusion Models
+# Talk2Makeup: Face Makeup Customization using Latent Diffusion Models
 
 This is an unofficial implementation of the paper **DreamMakeup** (arXiv:2510.10918).
 
