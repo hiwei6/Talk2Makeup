@@ -132,39 +132,47 @@ def get_skin_mask(parsing, h, w, include_neck=True):
     mask = cv2.GaussianBlur(mask, (25, 25), 0)
     return np.clip(mask, 0, 1)
 
-def get_advanced_masks(parsing, h, w):
+def get_advanced_masks(parsing, h, w, blush_size=1.0):
     """
     生成精細遮罩 (包含眉毛、嘴唇、腮紅、底妝)
+
+    Args:
+        blush_size (float): 腮紅範圍縮放係數 (由 LLM 判斷或手動調整)。
+            1.0 = 預設範圍，<1.0 縮小暈染範圍（如「小範圍蘋果肌腮紅」），
+            >1.0 放大暈染範圍（如「大範圍打亮腮紅」）。
     """
     # 1. 眉毛
     brows = np.where((parsing == 2) | (parsing == 3), 1.0, 0.0)
-    
+
     # 2. 嘴唇 (僅去除牙齒，暫時不內縮)
     # 這樣可以確保遮罩面積最大化，一定看得到顏色
     lips_raw = np.where((parsing == 12) | (parsing == 13), 1.0, 0.0).astype(np.uint8)
     mouth_inner = np.where(parsing == 11, 1.0, 0.0).astype(np.uint8) # 牙齒
-    
+
     # 只做減法，不做 erode
     lips_final = cv2.subtract(lips_raw, mouth_inner).astype(np.float32)
-    
-    # 3. 腮紅 (幾何計算)
+
+    # 3. 腮紅 (幾何計算，範圍隨 blush_size 彈性縮放)
+    blush_size = float(np.clip(blush_size, 0.4, 2.5))
     blush_mask = np.zeros((h, w), dtype=np.float32)
     l_eye = np.argwhere(parsing == 4)
     r_eye = np.argwhere(parsing == 5)
-    
+
     if len(l_eye) > 0 and len(r_eye) > 0:
         ly, lx = l_eye.mean(axis=0)
         ry, rx = r_eye.mean(axis=0)
-        offset_y = h * 0.12 
+        offset_y = h * 0.12
         offset_x = (rx - lx) * 0.15
-        
-        cv2.circle(blush_mask, (int(lx - offset_x), int(ly + offset_y)), 5, 1, -1)
-        cv2.circle(blush_mask, (int(rx + offset_x), int(ry + offset_y)), 5, 1, -1)
-        
-        blur_size = int(w / 3) | 1
+
+        seed_radius = max(1, int(round(5 * blush_size)))
+        cv2.circle(blush_mask, (int(lx - offset_x), int(ly + offset_y)), seed_radius, 1, -1)
+        cv2.circle(blush_mask, (int(rx + offset_x), int(ry + offset_y)), seed_radius, 1, -1)
+
+        # 暈染半徑跟著 blush_size 縮放：範圍越大，色塊邊界越柔和、覆蓋越廣
+        blur_size = max(3, int(w / 3 * blush_size)) | 1
         blush_mask = cv2.GaussianBlur(blush_mask, (blur_size, blur_size), 0)
         if blush_mask.max() > 0: blush_mask /= blush_mask.max()
-        
+
         skin = np.where(parsing == 1, 1.0, 0.0)
         nose = np.where(parsing == 10, 1.0, 0.0)
         nose_dilated = cv2.dilate(nose.astype(np.uint8), np.ones((15,15), np.uint8), iterations=1)
@@ -181,27 +189,34 @@ def get_advanced_masks(parsing, h, w):
         "parsing": parsing
     }
 
-def generate_realistic_eyeshadow(parsing, h, w):
-    """生成高擬真的漸層眼影遮罩"""
+def generate_realistic_eyeshadow(parsing, h, w, size_scale=1.0):
+    """生成高擬真的漸層眼影遮罩
+
+    Args:
+        size_scale (float): 暈染範圍縮放係數 (由 LLM 判斷或手動調整)。
+            1.0 = 預設範圍，<1.0 收斂成「眼頭/眼尾小範圍提亮」，
+            >1.0 放大成「大範圍煙燻眼」。
+    """
+    size_scale = float(np.clip(size_scale, 0.4, 2.5))
     l_eye = np.where(parsing == 4, 1.0, 0.0)
     r_eye = np.where(parsing == 5, 1.0, 0.0)
     brows = np.where((parsing == 2) | (parsing == 3), 1.0, 0.0)
-    
+
     eyeshadow_mask = np.zeros((h, w), dtype=np.float32)
-    
+
     for eye_class, direction in [(4, 'left'), (5, 'right')]:
         eye_mask = np.where(parsing == eye_class, 1.0, 0.0).astype(np.uint8)
         if eye_mask.sum() == 0: continue
-        
-        shift_y = int(h * 0.02) 
-        shift_x = int(w * 0.015)
+
+        shift_y = int(h * 0.02 * size_scale)
+        shift_x = int(w * 0.015 * size_scale)
         M = np.float32([[1, 0, 0], [0, 1, 0]])
-        
+
         shift_x_dir = -shift_x if direction == 'left' else shift_x
-        M[1, 2] = -shift_y 
+        M[1, 2] = -shift_y
         M[0, 2] = shift_x_dir
-        
-        kernel_size = (int(w*0.05), int(h*0.04))
+
+        kernel_size = (max(1, int(w*0.05*size_scale)), max(1, int(h*0.04*size_scale)))
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, kernel_size)
         dilated_eye = cv2.dilate(eye_mask, kernel, iterations=3)
         shadow_base = cv2.warpAffine(dilated_eye, M, (w, h))

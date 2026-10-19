@@ -7,6 +7,14 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OLLAMA_MODEL="${OLLAMA_MODEL:-llama3}"
 
+# 排程器的 output log 要等 job 結束才會複製回來，
+# 這裡把所有輸出即時鏡射一份到 /work 上的 log 檔，
+# 從登入節點執行 tail -f run_live.log 即可即時觀看
+RUN_LOG="$SCRIPT_DIR/run_live.log"
+exec > >(tee "$RUN_LOG") 2>&1
+echo "=== $(date '+%Y-%m-%d %H:%M:%S') job 啟動於 $(hostname) ==="
+echo "=== 即時 log：tail -f $RUN_LOG ==="
+
 # 決定 Python：若 llm env 已啟動就用當前 python，否則用完整路徑
 LLM_PYTHON="$(conda run -n llm which python 2>/dev/null || echo /home/willyliu0623/miniconda3/envs/llm/bin/python)"
 
@@ -41,4 +49,4 @@ fi
 
 # 啟動 Gradio app
 echo "[3/3] 啟動 talk2makeup..."
-"$LLM_PYTHON" "$SCRIPT_DIR/app.py"
+"$LLM_PYTHON" -u "$SCRIPT_DIR/app.py"

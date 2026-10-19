@@ -1,3 +1,10 @@
+import sys
+
+# 在 job script（非 TTY）環境下 stdout 是全緩衝，強制改為行緩衝
+# 讓 print 訊息即時寫入 log 檔（等同 python -u 的效果）
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
+
 import gradio as gr
 import torch
 import numpy as np
@@ -127,20 +134,46 @@ LLM_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
 
 SYSTEM_PROMPT = """You are a professional makeup artist AI. Convert the user's makeup description into a JSON object.
 
+REASONING FIRST (this is the key step — do NOT skip it or rush to fill in default numbers):
+Before deciding any color/alpha/size, think through it like a real makeup artist would for ANY description you're
+given — whether it names a known style, blends several, or is purely descriptive with no name at all. There is no
+fixed list of "known styles" to match against; reason from first principles every time:
+  1. What is the overall mood/reference this evokes (era, occasion, culture, intensity, realism vs. theatrical)?
+  2. Given that mood, which face parts would a real makeup artist actually touch — including parts the user never
+     named, if the mood clearly implies them (e.g. a described mood that's inherently about a dramatically altered
+     base complexion implies foundation should be on, even if "foundation" was never said)?
+  3. For each part you're touching, how opaque/saturated and how large would it realistically need to be to actually
+     read as that mood in a photo — not "a safe middle value", but what the mood specifically calls for?
+Write this reasoning concisely into the "style_analysis" field. Let it genuinely drive the numbers you output next —
+if style_analysis says something is dramatic/full-coverage, the matching alpha must actually be high, not moderate.
+
 STRICT RULES:
 - Output ONLY valid JSON. No explanation, no markdown, no code blocks.
 - "color" must be a 6-digit hex code like "#D9334D".
-- "alpha" controls opacity: 0.0=skip, 0.3-0.6=natural, 0.8-1.5=heavy. Set alpha>0 for any mentioned part.
-- "prompt" is an English Stable Diffusion keyword (e.g. "glossy red lips"). Empty string if not mentioned.
+- "alpha" controls opacity. Use the FULL 0.0–2.0 range based on your style_analysis, not a cautious middle value:
+  * 0.0 = this part plays no role in the look (neither stated nor implied)
+  * 0.2-0.5 = sheer/barely-there
+  * 0.6-1.0 = clearly visible, bold/saturated
+  * 1.1-2.0 = near/full opaque coverage — for whenever the analysis concluded a part must completely override the
+    natural skin/lip tone to read correctly. Don't be conservative here if the mood calls for it.
+- "prompt" is an English Stable Diffusion keyword (e.g. "glossy red lips"). Empty string if alpha=0.
 - "global_prompt" is English, describes overall style.
-- "reason" explains WHY you chose this color/alpha for this part, in Traditional Chinese (繁體中文), 1-2 sentences.
+- "reason" explains WHY you chose this color/alpha for this part, in Traditional Chinese (繁體中文), 1-2 sentences,
+  consistent with your style_analysis.
 - "global_reason" explains the overall design intent in Traditional Chinese, 1-2 sentences.
+- "blush" and "eyeshadow" additionally need a "size" field (float, 0.5–2.0, default 1.0) for how LARGE the painted
+  area is (independent of "alpha", which is intensity, not area). Derive it from style_analysis the same way as
+  alpha — small/precise vs. wide/dramatic — rather than a list of trigger phrases.
 
-OUTPUT FORMAT (fill every field, use alpha=0.0 only for truly unmentioned parts):
-{"global_prompt":"...","global_reason":"...","foundation":{"color":"#HEX","alpha":0.0,"prompt":"","reason":"..."},"lips":{"color":"#HEX","alpha":0.5,"prompt":"...","reason":"..."},"blush":{"color":"#HEX","alpha":0.3,"prompt":"...","reason":"..."},"eyeshadow":{"color":"#HEX","alpha":0.4,"prompt":"...","reason":"..."},"brows":{"color":"#HEX","alpha":0.3,"prompt":"...","reason":"..."}}
+OUTPUT FORMAT (fill every field; the same reasoning-driven judgment applies no matter what the input looks like):
+{"style_analysis":"...","global_prompt":"...","global_reason":"...","foundation":{"color":"#HEX","alpha":0.0,"prompt":"","reason":"..."},"lips":{"color":"#HEX","alpha":0.5,"prompt":"...","reason":"..."},"blush":{"color":"#HEX","alpha":0.3,"size":1.0,"prompt":"...","reason":"..."},"eyeshadow":{"color":"#HEX","alpha":0.4,"size":1.0,"prompt":"...","reason":"..."},"brows":{"color":"#HEX","alpha":0.3,"prompt":"...","reason":"..."}}
 
-EXAMPLE — input "natural Korean look, pink lips, soft blush":
-{"global_prompt":"Korean natural makeup, soft and dewy","global_reason":"整體走韓系清透路線，以低飽和度色系和輕薄妝感呈現自然水潤的氛圍。","foundation":{"color":"#FFE4C4","alpha":0.0,"prompt":"","reason":"使用者未提到底妝，維持原膚色以保留自然感。"},"lips":{"color":"#FFB6C1","alpha":0.5,"prompt":"soft pink glossy lips","reason":"粉嫩玫瑰色呼應韓系少女感，中等濃度保持水潤透明質感。"},"blush":{"color":"#F4A0A0","alpha":0.35,"prompt":"soft pink blush","reason":"淡粉色腮紅以低濃度暈染，製造自然的血色感與水光肌效果。"},"eyeshadow":{"color":"#C8A882","alpha":0.3,"prompt":"neutral eyeshadow","reason":"米棕色眼影淡掃加深眼神層次，不搶眼但增加立體感。"},"brows":{"color":"#5C3D1E","alpha":0.3,"prompt":"natural soft brows","reason":"深棕色描繪平直眉，符合韓系妝容的標誌性眉型。"}}
+EXAMPLE — input "natural Korean look, pink lips, soft blush" (a mild, low-coverage mood → low alphas, small sizes):
+{"style_analysis":"這是清透自然的韓系日常妝，強調透膚感而非遮蓋力，所有部位都應維持低到中濃度、貼近原膚色與小範圍暈染，底妝不需額外處理。","global_prompt":"Korean natural makeup, soft and dewy","global_reason":"整體走韓系清透路線，以低飽和度色系和輕薄妝感呈現自然水潤的氛圍。","foundation":{"color":"#FFE4C4","alpha":0.0,"prompt":"","reason":"韓系裸妝本就強調保留原膚色透氣感，不需額外遮蓋。"},"lips":{"color":"#FFB6C1","alpha":0.5,"prompt":"soft pink glossy lips","reason":"粉嫩玫瑰色呼應韓系少女感，中等濃度保持水潤透明質感。"},"blush":{"color":"#F4A0A0","alpha":0.35,"size":0.8,"prompt":"soft pink blush","reason":"淡粉色腮紅以低濃度、小範圍暈染於蘋果肌，製造自然的血色感與水光肌效果。"},"eyeshadow":{"color":"#C8A882","alpha":0.3,"size":0.9,"prompt":"neutral eyeshadow","reason":"米棕色眼影小範圍淡掃加深眼神層次，不搶眼但增加立體感。"},"brows":{"color":"#5C3D1E","alpha":0.3,"prompt":"natural soft brows","reason":"深棕色描繪平直眉，符合韓系妝容的標誌性眉型。"}}
+
+EXAMPLE — input "整臉慘白、誇張放大的正紅嘴唇，像馬戲團表演者" (a described mood implying full-coverage base + bold lips,
+even though the user only explicitly named two things — style_analysis is what surfaces the rest):
+{"style_analysis":"使用者描述的是舞台/戲劇化的表演妝感：『整臉慘白』直接要求底妝要接近全遮蓋才能蓋掉原膚色，『誇張放大的正紅嘴唇』表示唇妝需要高飽和度且視覺範圍大，這類妝容通常伴隨誇張的五官輪廓（粗眉、明顯眼線），因此眉毛也拉高濃度呼應整體戲劇感，但使用者未強調眼影，故維持低調。","global_prompt":"theatrical performer makeup, chalk white face, oversized bold red lips","global_reason":"以近乎全白的底妝與誇大的正紅唇為核心，呈現馬戲團表演者的戲劇化舞台感。","foundation":{"color":"#FAF6F0","alpha":1.4,"prompt":"chalk white opaque stage makeup base","reason":"『整臉慘白』要求底妝完全覆蓋原膚色，需要接近全遮蓋的高濃度粉白色。"},"lips":{"color":"#D6001C","alpha":1.3,"prompt":"oversized bold saturated red lips","reason":"『誇張放大的正紅嘴唇』需要高飽和度與高濃度，才能呈現舞台感的鮮豔實色而非淡妝的粉色。"},"blush":{"color":"#E8394A","alpha":0.4,"size":1.0,"prompt":"subtle red cheek tint","reason":"使用者未特別描述腮紅，給予中等濃度的紅色點綴以呼應整體戲劇色調，不搶過唇妝的焦點。"},"eyeshadow":{"color":"#8A8580","alpha":0.2,"size":0.9,"prompt":"minimal neutral eye definition","reason":"使用者未提及眼妝需求，僅給予淡淡的輪廓感，讓焦點集中在底妝與唇妝。"},"brows":{"color":"#1A1A1A","alpha":0.6,"prompt":"bold defined eyebrows","reason":"戲劇化妝容通常伴隨明顯的眉型輪廓，中高濃度呼應整體誇張感。"}}
 """
 
 def _llm_result_to_markdown(data: dict) -> str:
@@ -149,13 +182,16 @@ def _llm_result_to_markdown(data: dict) -> str:
         "foundation": "底妝", "lips": "口紅",
         "blush": "腮紅", "eyeshadow": "眼影", "brows": "眉毛",
     }
+    SIZE_PARTS = {"blush", "eyeshadow"}
+    style_analysis = data.get("style_analysis", "")
     global_reason = data.get("global_reason", "")
     lines = [
+        f"**妝容分析**：{style_analysis}" if style_analysis else "",
         f"**整體風格**：{data.get('global_prompt', '')}",
         f"*{global_reason}*" if global_reason else "",
         "",
-        "| 部位 | 顏色 | 濃度 | 質感描述 | 設計說明 |",
-        "|:----:|:----:|:----:|:---------|:---------|",
+        "| 部位 | 顏色 | 濃度 | 範圍 | 質感描述 | 設計說明 |",
+        "|:----:|:----:|:----:|:----:|:---------|:---------|",
     ]
     for key, label in PART_LABELS.items():
         p = data.get(key, {})
@@ -170,7 +206,12 @@ def _llm_result_to_markdown(data: dict) -> str:
         else:
             color_cell = f"`{color}`"
             alpha_cell = f"{alpha:.1f} {bar}"
-        lines.append(f"| **{label}** | {color_cell} | {alpha_cell} | {prompt} | {reason} |")
+        if key in SIZE_PARTS and alpha > 0:
+            size = float(p.get("size", 1.0))
+            size_cell = f"{size:.1f}x"
+        else:
+            size_cell = "—"
+        lines.append(f"| **{label}** | {color_cell} | {alpha_cell} | {size_cell} | {prompt} | {reason} |")
     return "\n".join(lines)
 
 def parse_makeup_with_llm(user_input):
@@ -207,8 +248,8 @@ def parse_makeup_with_llm(user_input):
         data.get("global_prompt", "natural makeup, highly detailed"),
         safe("foundation", "color", "#FFE4C4"), float(safe("foundation", "alpha", 0.0)), safe("foundation", "prompt", ""),
         safe("lips",       "color", "#D9334D"), float(safe("lips",       "alpha", 0.0)), safe("lips",       "prompt", ""),
-        safe("blush",      "color", "#E69999"), float(safe("blush",      "alpha", 0.0)), safe("blush",      "prompt", ""),
-        safe("eyeshadow",  "color", "#CC7359"), float(safe("eyeshadow",  "alpha", 0.0)), safe("eyeshadow",  "prompt", ""),
+        safe("blush",      "color", "#E69999"), float(safe("blush",      "alpha", 0.0)), float(safe("blush", "size", 1.0)), safe("blush", "prompt", ""),
+        safe("eyeshadow",  "color", "#CC7359"), float(safe("eyeshadow",  "alpha", 0.0)), float(safe("eyeshadow", "size", 1.0)), safe("eyeshadow", "prompt", ""),
         safe("brows",      "color", "#4D331A"), float(safe("brows",      "alpha", 0.0)), safe("brows",      "prompt", ""),
         summary_md,
         raw_json,
@@ -222,8 +263,8 @@ def generate_custom_makeup(
     global_prompt, lambda_interp, steps,
     found_color_hex, found_alpha, found_prompt,
     lip_color_hex, lip_alpha, lip_prompt,
-    blush_color_hex, blush_alpha, blush_prompt,
-    eye_color_hex, eye_alpha, eye_prompt,
+    blush_color_hex, blush_alpha, blush_size, blush_prompt,
+    eye_color_hex, eye_alpha, eye_size, eye_prompt,
     brow_color_hex, brow_alpha, brow_prompt
 ):
     pipe, net = load_models()
@@ -241,8 +282,8 @@ def generate_custom_makeup(
     vis_parsing_np = visualize_parsing_maps(np.array(source_pil), parsing)
     vis_parsing_pil = Image.fromarray(vis_parsing_np)
 
-    # 3. 取得進階遮罩
-    adv_masks = get_advanced_masks(parsing, 512, 512)
+    # 3. 取得進階遮罩（腮紅範圍隨 blush_size 彈性縮放）
+    adv_masks = get_advanced_masks(parsing, 512, 512, blush_size=blush_size)
 
     print("Applying Makeup...")
     current_image = source_np.copy()
@@ -267,7 +308,7 @@ def generate_custom_makeup(
         )
 
     if eye_alpha > 0:
-        eyeshadow_mask_gradient = generate_realistic_eyeshadow(parsing, 512, 512)
+        eyeshadow_mask_gradient = generate_realistic_eyeshadow(parsing, 512, 512, size_scale=eye_size)
         current_image = apply_makeup_natural(
             current_image, eyeshadow_mask_gradient, eye_rgb, eye_alpha, update_l_channel=False
         )
@@ -386,12 +427,14 @@ with gr.Blocks(css=custom_css, title="DreamMakeup Visualizer") as demo:
                     with gr.Row():
                         blush_color = gr.ColorPicker(label="顏色 (RGB)", value="#E69999")
                         blush_alpha = gr.Slider(0.0, 2.0, value=0.3, label="濃度")
+                        blush_size = gr.Slider(0.4, 2.5, value=1.0, step=0.1, label="範圍 (0.4=小範圍, 2.5=大範圍打亮)")
                         blush_prompt = gr.Textbox(label="質感描述", value="soft pink blush")
 
                 with gr.Accordion("👁️ 眼影 (Eyeshadow)", open=False):
                     with gr.Row():
                         eye_color = gr.ColorPicker(label="顏色 (RGB)", value="#CC7359")
                         eye_alpha = gr.Slider(0.0, 2.0, value=0.4, label="濃度")
+                        eye_size = gr.Slider(0.4, 2.5, value=1.0, step=0.1, label="範圍 (0.4=眼頭提亮, 2.5=大範圍煙燻)")
                         eye_prompt = gr.Textbox(label="質感描述", value="soft coral eyeshadow")
                 
                 with gr.Accordion("🤨 眉毛 (Brows)", open=False):
@@ -421,8 +464,8 @@ with gr.Blocks(css=custom_css, title="DreamMakeup Visualizer") as demo:
             global_prompt,
             found_color, found_alpha, found_prompt,
             lip_color, lip_alpha, lip_prompt,
-            blush_color, blush_alpha, blush_prompt,
-            eye_color, eye_alpha, eye_prompt,
+            blush_color, blush_alpha, blush_size, blush_prompt,
+            eye_color, eye_alpha, eye_size, eye_prompt,
             brow_color, brow_alpha, brow_prompt,
             llm_summary,
             llm_json_out,
@@ -436,11 +479,19 @@ with gr.Blocks(css=custom_css, title="DreamMakeup Visualizer") as demo:
             input_img, global_prompt, lambda_slider, steps_slider,
             found_color, found_alpha, found_prompt,
             lip_color, lip_alpha, lip_prompt,
-            blush_color, blush_alpha, blush_prompt,
-            eye_color, eye_alpha, eye_prompt,
+            blush_color, blush_alpha, blush_size, blush_prompt,
+            eye_color, eye_alpha, eye_size, eye_prompt,
             brow_color, brow_alpha, brow_prompt
         ],
         outputs=[seg_img, guide_img, result_img]
     )
     
-    demo.queue().launch(share=True)
+if __name__ == "__main__":
+    print("🚀 正在啟動 Gradio 伺服器...")
+    demo.queue().launch(
+        share=True,
+        server_name="0.0.0.0",           # 綁定所有介面，方便從計算節點外經 SSH tunnel 連入
+        server_port=int(os.getenv("GRADIO_SERVER_PORT", "7860")),
+        show_error=True,                 # 錯誤訊息直接顯示在 UI 上
+        prevent_thread_lock=False,       # 阻塞主執行緒，讓 job script 保持存活直到 job 被砍
+    )

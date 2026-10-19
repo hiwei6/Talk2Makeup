@@ -43,3 +43,25 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Shell scripts
+*.sh
+
+# SLURM job logs
+*.err
+*.out
+
+# 資料集與人臉圖片（第三方資料集、個資，不上傳）
+phototest/data/
+phototest/test_images/
+phototest/logs/
+
+# 含寫死的 Gemini API key（敏感資料）
+phototest/ai_anno.py
+phototest/ai_anno_zh_tw.py
+
+# 本機狀態檔
+phototest/.gemini_daily_quota.json
+
+# 誤產生的檔案
+tatus --short

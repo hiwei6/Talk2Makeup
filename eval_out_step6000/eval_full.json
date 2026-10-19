@@ -1,0 +1,46 @@
+[
+  {
+    "name": "21_46",
+    "_source": "/work/willyliu0623/talk2makeup_0819/phototest/data/beautyface/images/21_46.png",
+    "_generated": "/work/willyliu0623/talk2makeup_0819/results_compare/step6000/21_46/3_final_result.png",
+    "clip_t_llm": 0.3223,
+    "clip_t_user": 0.2671,
+    "clip_i": 0.9351,
+    "clip_s": 0.9419,
+    "ssim": 0.9745,
+    "_skips": {}
+  },
+  {
+    "name": "669_358_04",
+    "_source": "/work/willyliu0623/talk2makeup_0819/phototest/data/beautyface/images/669_358_04.png",
+    "_generated": "/work/willyliu0623/talk2makeup_0819/results_compare/step6000/669_358_04/3_final_result.png",
+    "clip_t_llm": 0.2622,
+    "clip_t_user": 0.1945,
+    "clip_i": 0.9795,
+    "clip_s": 0.9766,
+    "ssim": 0.9737,
+    "_skips": {}
+  },
+  {
+    "name": "9_23",
+    "_source": "/work/willyliu0623/talk2makeup_0819/phototest/data/beautyface/images/9_23.png",
+    "_generated": "/work/willyliu0623/talk2makeup_0819/results_compare/step6000/9_23/3_final_result.png",
+    "clip_t_llm": 0.2905,
+    "clip_t_user": 0.2566,
+    "clip_i": 0.9736,
+    "clip_s": 0.9722,
+    "ssim": 0.9531,
+    "_skips": {}
+  },
+  {
+    "name": "13_119",
+    "_source": "/work/willyliu0623/talk2makeup_0819/phototest/data/beautyface/images/13_119.png",
+    "_generated": "/work/willyliu0623/talk2makeup_0819/results_compare/step6000/13_119/3_final_result.png",
+    "clip_t_llm": 0.3079,
+    "clip_t_user": 0.2617,
+    "clip_i": 0.9663,
+    "clip_s": 0.9639,
+    "ssim": 0.9586,
+    "_skips": {}
+  }
+]
